@@ -1,10 +1,7 @@
-// #define fetPin 3
-// #define maxIntensity 255
-const int fetPin = 1;
-// const int maxIntensity = 255;
+#define fetPin 1;
+
 void setup() {
-  // put your setup code here, to run once:
-  pinMode(fetPin, OUTPUT);
+    pinMode(fetPin, OUTPUT);
 }
 
 void loop() {
