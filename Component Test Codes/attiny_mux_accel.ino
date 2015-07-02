@@ -45,7 +45,12 @@
 //accelerometer sensitivity can be 2,4, or 8g
 #define GSCALE 2
 
-//store current accelerometer values for x,y,z axis
+//#define THREE_ACCELS 1
+
+//calibration offset for sensors
+float offset1[3] = {0.0, 0.0, 0.0};
+float offset2[3] = {0.0, 0.0, 0.0};
+//stores current accelerometer values for x,y,z axis
 float currentAcc[3] = {0.0, 0.0, 0.0};
 
 int s0_cur = 0;
@@ -66,9 +71,49 @@ void setup()
   digitalWrite(S0, HIGH);
   initMMA8452();
   digitalWrite(S0, LOW);
+  digitalWrite(S1, HIGH);
+  initMMA8452();
+  digitalWrite(S0, LOW);
+  digitalWrite(S1, LOW);
   delay(100);
+  
+  //calibrate
+  calibrate();
 
 }
+
+/* calibrates offsets for accelerometers */
+void calibrate(){
+  static float accel_1[3];  // Stores 5 instances ofthe 12-bit signed value of first accelerometer
+  static float accel_2[3];  // Stores the 12-bit signed value of second accelerometer
+  static float accel_3[3];  // Stores the 12-bit signed value of second accelerometer
+
+  //update measurement for accel1
+  digitalWrite(S0, LOW);
+  digitalWrite(S1, LOW);
+  measure_accel(accel_1);
+  
+  //update measurement for accel2
+  digitalWrite(S0, HIGH);
+  measure_accel(accel_2);
+  
+  #ifdef THREE_ACCELS
+  digitalWrite(S0, LOW);
+  digitalWrite(S1, HIGH);
+  measure_accel(accel_3);
+  #endif
+  
+  //update offset with current difference
+  for (int i = 0; i < 3; i++) {
+    offset1[i] = accel_1[i]-accel_2[i];
+    #ifdef THREE_ACCELS
+    offset2[i] = accel_2[i]-accel_3[i];
+    #endif
+    
+  }
+}
+  
+  
 
 
 /*calculates orienations from accel data, stores in orienations[] array */
@@ -106,28 +151,58 @@ void loop()
 {
   static float accel_1[3];  // Stores 5 instances ofthe 12-bit signed value of first accelerometer
   static float accel_2[3];  // Stores the 12-bit signed value of second accelerometer
-  static int strikes[3];//keeps track of strikes per axis
+  #ifdef THREE_ACCELS
+  static float accel_3[3];  // Stores the 12-bit signed value of second accelerometer
+  #endif
+  static int strikes1[3];//keeps track of strikes per axis accel 1 and 2
+  static int strikes2[3];//keeps track of strikes per axis accel 2 and 3
 
 
   //update measurement for accel1
   digitalWrite(S0, LOW);
+  digitalWrite(S1, LOW);
   measure_accel(accel_1);
   
   //update measurement for accel2
   digitalWrite(S0, HIGH);
   measure_accel(accel_2);
   
+  #ifdef THREE_ACCELS
+  //update measurement for accel3
+  digitalWrite(S1, HIGH);
+  digitalWrite(S0, LOW);
+  measure_accel(accel_3);
+  #endif
+  
 
     for (int i = 0; i < 3; i++) {
-      if (abs(accel_1[i] - accel_2[i]) > 20) {
-        strikes[i]++;
+      if (abs(accel_1[i] - offset1[i] - accel_2[i]) > 10) {
+        strikes1[i]++;
       }// add srikes if deviation >20 degrees
       else{
-        strikes[i]=0;
+        strikes1[i]=0;
       }//set strikes to zero if no deviation
-      if(strikes[i] > 10){
+      if(strikes1[i] > 10){
+        digitalWrite(S0,HIGH);
+        digitalWrite(S1,LOW);
         buzz(100);
+        strikes1[i] = 0;
       }//buzz if 10 strikes in a row
+      
+      #ifdef THREE_ACCELS
+      if (abs(accel_2[i] - offset2[i] - accel_3[i]) > 10) {
+        strikes2[i]++;
+      }// add srikes if deviation >20 degrees
+      else{
+        strikes2[i]=0;
+      }//set strikes to zero if no deviation
+      if(strikes2[i] > 10){
+        digitalWrite(S0,HIGH);
+        digitalWrite(S1,HIGH);
+        buzz(100);
+        strikes2[i] = 0;
+      }//buzz if 10 strikes in a row
+      #endif
   }
 }
 //tried loop with rolling average
