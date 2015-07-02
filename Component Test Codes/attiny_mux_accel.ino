@@ -45,7 +45,13 @@
 //accelerometer sensitivity can be 2,4, or 8g
 #define GSCALE 2
 
-//store current accelerometer values for x,y,z axis
+//uncomment for using three accels
+//#define THREE_ACCELS 1
+
+//calibration offset for sensors
+float offset1[3] = {0.0, 0.0, 0.0};
+float offset2[3] = {0.0, 0.0, 0.0};
+//stores current accelerometer values for x,y,z axis
 float currentAcc[3] = {0.0, 0.0, 0.0};
 
 int s0_cur = 0;
@@ -62,16 +68,47 @@ void setup()
   TinyWireM.begin();
 
   //Test and initialize the MMA8452
-  initMMA8452();
+  initMMA8452();  //init accel1
   digitalWrite(S0, HIGH);
-  initMMA8452();
+  initMMA8452();  //init accel2
   digitalWrite(S0, LOW);
+  digitalWrite(S1, HIGH);
+  initMMA8452();  //init accel3
   delay(100);
+  calibrate();
 
 }
 
+/* calibrates offsets for accelerometers */
+void calibrate(){
+  static float accel_1[3];  // Stores 5 instances ofthe 12-bit signed value of first accelerometer
+  static float accel_2[3];  // Stores the 12-bit signed value of second accelerometer
+  static float accel_3[3];  // Stores the 12-bit signed value of second accelerometer
 
-/*calculates orienations from accel data, stores in orienations[] array */
+  //update measurement for accel1
+  digitalWrite(S0, LOW);
+  digitalWrite(S1, LOW);
+  measure_accel(accel_1);
+  
+  //update measurement for accel2
+  digitalWrite(S0, HIGH);
+  measure_accel(accel_2);
+
+  //update measurement for accel3
+  digitalWrite(S0, LOW);
+  digitalWrite(S1, HIGH);
+  measure_accel(accel_3);
+  
+  
+  //update offset with current difference
+  for (int i = 0; i < 3; i++) {
+    offset1[i] = accel_1[i]-accel_2[i];
+    offset2[i] = accel_2[i]-accel_3[i];
+  }
+}
+
+
+/*calculates orientations from accel data, stores in orienations[] array */
 void measure_accel(float * orientations) {
   int accelCount[3];
 
@@ -85,7 +122,8 @@ void measure_accel(float * orientations) {
   }
 
   //calculate degrees from g's value
-  orientations[0] = 180 * atan2(accelG[0], sqrt(square(accelG[1]) + square(accelG[2]))) / 3.1415926;
+  //orientations[0] = 180 * atan2(accelG[0], sqrt(square(accelG[1]) + square(accelG[2]))) / 3.1415926;
+  orientations[0] = 0; //this measurement isn't very important. See if preventing these ops speeds up device
   orientations[1] = 180 * atan2(accelG[1], sqrt(square(accelG[0]) + square(accelG[2]))) / 3.1415926;
   orientations[2] = 180 * atan2(sqrt(square(accelG[0]) + square(accelG[1])), accelG[2]) / 3.1415926;
 
@@ -106,79 +144,56 @@ void loop()
 {
   static float accel_1[3];  // Stores 5 instances ofthe 12-bit signed value of first accelerometer
   static float accel_2[3];  // Stores the 12-bit signed value of second accelerometer
-  static int strikes[3];//keeps track of strikes per axis
+  static float accel_3[3];  // Stores the 12-bit signed value of third accelerometer
+  
+  static int strikes1[3];//keeps track of strikes per axis accel 1 and 2
+  static int strikes2[3];//keeps track of strikes per axis accel 2 and 3
 
 
   //update measurement for accel1
   digitalWrite(S0, LOW);
+  digitalWrite(S1, LOW);
   measure_accel(accel_1);
   
   //update measurement for accel2
   digitalWrite(S0, HIGH);
   measure_accel(accel_2);
   
+  //update measurement for accel3
+  digitalWrite(S1, HIGH);
+  digitalWrite(S0, LOW);
+  measure_accel(accel_3);
+  
+  
 
     for (int i = 0; i < 3; i++) {
-      if (abs(accel_1[i] - accel_2[i]) > 20) {
-        strikes[i]++;
+      if (abs(accel_1[i] - offset1[i] - accel_2[i]) > 10) {
+        strikes1[i]++;
       }// add srikes if deviation >20 degrees
       else{
-        strikes[i]=0;
+        strikes1[i]=0;
       }//set strikes to zero if no deviation
-      if(strikes[i] > 10){
-        buzz(100);
+      if(strikes1[i] > 10){
+        digitalWrite(S0,HIGH);
+        digitalWrite(S1,LOW);
+        buzz(50);
       }//buzz if 10 strikes in a row
+      
+
+      if (abs(accel_2[i] - offset2[i] - accel_3[i]) > 30) {
+        strikes2[i]++;
+      }// add srikes if deviation >20 degrees
+      else{
+        strikes2[i]=0;
+      }//set strikes to zero if no deviation
+      if(strikes2[i] > 10){
+        digitalWrite(S0,LOW);
+        digitalWrite(S1,HIGH);
+        buzz(50);
+      }//buzz if 10 strikes in a row
+      
   }
 }
-//tried loop with rolling average
-/*
-#define measurements 5
-void loop()
-{
-  static float accel_1[measurements][3];  // Stores 5 instances ofthe 12-bit signed value of first accelerometer
-  static float accel_2[measurements][3];  // Stores the 12-bit signed value of second accelerometer
-  static float rolling_avg_1[3];
-  static float rolling_avg_2[3];
-  static int cur = 0;
-  static bool have_enough_measurements = false;
-  //Retrieve the current accelerometer readings
-
-
-  //update rolling average for accel1
-  digitalWrite(S0, LOW);
-  rolling_avg_1[0] -= (accel_1[cur][0]/measurements);
-  rolling_avg_1[1] -= (accel_1[cur][1]/measurements);
-  rolling_avg_1[2] -= (accel_1[cur][2]/measurements);
-  measure_accel(accel_1[cur]);
-  rolling_avg_1[0] += (accel_1[cur][0]/measurements);
-  rolling_avg_1[1] += (accel_1[cur][1]/measurements);
-  rolling_avg_1[2] += (accel_1[cur][2]/measurements);
-  
-  //update rolling average for accel2
-  digitalWrite(S0, HIGH);
-  rolling_avg_2[0] -= (accel_2[cur][0]/measurements);
-  rolling_avg_2[1] -= (accel_2[cur][1]/measurements);
-  rolling_avg_2[2] -= (accel_2[cur][2]/measurements);
-  measure_accel(accel_2[cur]);
-  rolling_avg_2[0] += (accel_2[cur][0]/measurements);
-  rolling_avg_2[1] += (accel_2[cur][1]/measurements);
-  rolling_avg_2[2] += (accel_2[cur][2]/measurements);
- 
- 
-  cur++; 
-  if(cur >= measurements)have_enough_measurements = true;
-  cur = cur % measurements;
-  
-  
-  //once we have enough measurements, we can start doing rolling average
-  if (have_enough_measurements) {
-    for (int i = 0; i < 3; i++) {
-      if (abs(rolling_avg_1[i] - rolling_avg_2[i]) > 20) {
-        buzz(100);
-      }// buzz user if deviation in one way of >20 degrees
-    }
-  }
-}*/
 
 //Test and initialize the accelerometer
 void initMMA8452() {
@@ -259,25 +274,6 @@ void MMA8452Active() {
   byte c = readRegister(CTRL_REG1);
   writeRegister(CTRL_REG1, c | 0x01); //Set the active bit to begin detection
 }
-
-
-/*
-// Updates the accelCount array with current accel readings
-void updateAccelData() {
-  int accelCount[3]; // Stores the 12-bit signed value
-
-  readAccelData(accelCount); // Read the x/y/z adc values
-
-  // Now we'll calculate the accleration value into actual g's
-  float accelG[3]; // Stores the real accel value in g's
-  for (byte i = 0; i < 3; i++) {
-    // get actual g value, this depends on scale being set
-    accelG[i] = (float) accelCount[i] / ((1 << 12) / (2 * GSCALE));
-
-    // use a rolling filter. This is the additional line
-    currentAcc[i] = 0.95 * accelG[i] + currentAcc[i] * 0.05;
-  }
-}*/
 
 // Reads accel data from the MMA8452
 void readAccelData(int *destination)
